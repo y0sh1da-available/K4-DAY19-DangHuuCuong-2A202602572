@@ -168,7 +168,15 @@ class MeteredLLM:
 
     def embed(self, text: str) -> list[float]:
         start = time.perf_counter()
-        response = self._embed_client.embeddings.create(model=self.embed_model_id, input=text)
+        for attempt in range(5):
+            try:
+                response = self._embed_client.embeddings.create(model=self.embed_model_id, input=text)
+                break
+            except Exception as error:
+                if ("503" in str(error) or "429" in str(error) or "high demand" in str(error)) and attempt < 4:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise
         tokens = getattr(response.usage, "prompt_tokens", 0) or 0   # some OpenAI-compatible APIs omit usage
         self.usage += Usage(1, tokens, 0, price(self.embed_model_id, tokens), time.perf_counter() - start)
         return [float(value) for value in response.data[0].embedding]
